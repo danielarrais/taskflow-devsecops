@@ -1,5 +1,5 @@
 # Imagem dedicada ao DAST: usa a aplicação corrigida do Módulo 4.
-FROM cgr.dev/chainguard/python:latest-dev@sha256:630df1be3733f7b38d1b535872904248adfe23fbea4befcb08da47cb7436ddb2 AS build
+FROM cgr.dev/chainguard/python:latest-dev@sha256:01280a9ffd0c9c427d3127540203af6707ebf35cdb0481182aef303c03db239c AS build
 
 WORKDIR /app
 RUN python -m venv --without-pip /app/venv
@@ -7,7 +7,7 @@ COPY requirements.txt .
 RUN pip --python /app/venv/bin/python install --no-cache-dir --require-hashes -r requirements.txt \
     && mkdir -p /app/data
 
-FROM cgr.dev/chainguard/python:latest@sha256:8c6e0d0a587455e8a8d145e20234d5ef5a531a1c052a7b9d76b155ccc7fcded2
+FROM cgr.dev/chainguard/python:latest@sha256:0f47468835f6c443553040eebccc20b0762d9608251be085786007e2e93b2285
 
 WORKDIR /app
 ENV PATH="/app/venv/bin:$PATH" \
