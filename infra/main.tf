@@ -117,10 +117,10 @@ resource "aws_s3_bucket_public_access_block" "access_logs" {
 
 resource "aws_s3_bucket_public_access_block" "taskflow" {
   bucket                  = aws_s3_bucket.taskflow.id
-  block_public_acls       = false
-  block_public_policy     = false
-  ignore_public_acls      = false
-  restrict_public_buckets = false
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 resource "aws_s3_bucket_logging" "taskflow" {
@@ -139,7 +139,7 @@ resource "aws_security_group" "taskflow" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.allowed_ip_cidr]
   }
 
 }
