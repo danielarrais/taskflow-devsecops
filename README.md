@@ -1,15 +1,21 @@
 # TaskFlow DevSecOps
 
-[![CI](https://github.com/jsgomesjr/taskflow-devsecops/actions/workflows/ci.yml/badge.svg)](https://github.com/jsgomesjr/taskflow-devsecops/actions/workflows/ci.yml)
-[![SAST](https://github.com/jsgomesjr/taskflow-devsecops/actions/workflows/sast.yml/badge.svg)](https://github.com/jsgomesjr/taskflow-devsecops/actions/workflows/sast.yml)
-[![SCA](https://github.com/jsgomesjr/taskflow-devsecops/actions/workflows/sca.yml/badge.svg)](https://github.com/jsgomesjr/taskflow-devsecops/actions/workflows/sca.yml)
-[![Container](https://github.com/jsgomesjr/taskflow-devsecops/actions/workflows/container.yml/badge.svg)](https://github.com/jsgomesjr/taskflow-devsecops/actions/workflows/container.yml)
+[![CI](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/ci.yml/badge.svg)](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/ci.yml)
+[![SAST](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/sast.yml/badge.svg)](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/sast.yml)
+[![SCA](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/sca.yml/badge.svg)](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/sca.yml)
+[![Container](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/container.yml/badge.svg)](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/container.yml)
+[![DAST](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/dast.yml/badge.svg)](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/dast.yml)
+[![IaC Scan](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/iac-scan.yml/badge.svg)](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/iac-scan.yml)
+[![Observability](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/observability-smoke.yml/badge.svg)](https://github.com/danielarrais/taskflow-devsecops/actions/workflows/observability-smoke.yml)
 
 **Atividade 1 — Lab de Esteira Segura** (DevSecOps, Pós-Graduação em DevOps, CESAR School).
 
 A TaskFlow, aplicação Flask propositalmente vulnerável da disciplina, protegida por uma esteira de CI no GitHub Actions que funciona como *quality gate*: build, lint, testes, SAST, secret scanning, SCA e hardening da imagem rodam em todo Pull Request, e **nenhum merge na `main` acontece com um gate vermelho**.
 
-**Grupo:** [@jsgomesjr](https://github.com/jsgomesjr) · [@AlanGarci4](https://github.com/AlanGarci4) · [@danielarrais](https://github.com/danielarrais) · [@tuliocoimbra](https://github.com/tuliocoimbra)
+> **Atividade 2:** a arquitetura, os workflows de DAST/IaC/observabilidade e a
+> simulação de incidente estão em [`README_ATIVIDADE2.md`](README_ATIVIDADE2.md).
+
+**Grupo:** [@jsgomesjr](https://github.com/jsgomesjr) · [@AlanGarci4](https://github.com/AlanGarci4) · [@danielarrais](https://github.com/danielarrais) · [@tuliocoimbra](https://github.com/tuliocoimbra) · [@tjr-sobrs](https://github.com/tjr-sobrs)
 
 ## Sumário
 
@@ -37,6 +43,9 @@ Os quatro workflows disparam em `pull_request` para a `main`, em `push` na `main
 | [`sca.yml`](.github/workflows/sca.yml) | `SCA - pip-audit (requirements.txt)` e `(requirements-dev.txt)` | pip-audit contra a base da PyPA | qualquer CVE conhecida |
 | | `SCA - Trivy (dependencias)` | `trivy fs` nos manifestos de dependência | CVE HIGH ou CRITICAL |
 | [`container.yml`](.github/workflows/container.yml) | `Container - build e Trivy` | build da imagem, `trivy image`, `trivy` misconfig no Dockerfile e teste da imagem rodando com as flags seguras | CVE ou misconfig HIGH/CRITICAL, ou a aplicação não sobe |
+| [`dast.yml`](.github/workflows/dast.yml) | `DAST - ZAP Baseline` | sobe a aplicação no runner, espera `/healthz`, executa ZAP e publica relatórios | alerta ZAP não aceito |
+| [`iac-scan.yml`](.github/workflows/iac-scan.yml) | `IaC - Checkov`, `IaC - Terraform validate`, `IaC - Trivy config` | valida Terraform e escaneia Terraform/Compose | configuração insegura ou inválida |
+| [`observability-smoke.yml`](.github/workflows/observability-smoke.yml) | `Observability - logs seguros no Loki` | simula falhas de login e consulta o Loki | evento ausente ou dado sensível no log |
 
 Além dos gates, o [Dependabot](.github/dependabot.yml) monitora toda semana as dependências **pip**, as **GitHub Actions** (inclusive as actions compostas locais) e a **imagem Docker**, e abre PRs que passam pela mesma esteira.
 

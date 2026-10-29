@@ -1,0 +1,12 @@
+# ZAP Baseline rules: ID<TAB>ACTION<TAB>justificativa
+# Exceções limitadas ao contexto do runner ou a falsos positivos verificados.
+# Cada regra permanece documentada individualmente e não desativa o gate global.
+10035	IGNORE	HSTS não se aplica ao alvo HTTP local do runner; termina no proxy TLS em produção.
+10049	IGNORE	Cache-Control no-store é intencional para impedir cache de páginas autenticadas.
+10111	IGNORE	Regra apenas identifica a tela de login esperada; não representa vulnerabilidade.
+10112	IGNORE	Regra apenas identifica o cookie de sessão esperado; atributos seguros são validados separadamente.
+10031	IGNORE	Falso positivo no value do token CSRF aleatório do servidor, escapado pelo Jinja2.
+10106	IGNORE	O alvo do runner usa HTTP local; HTTPS termina no proxy TLS em produção.
+20012	IGNORE	Falso positivo do active scan; o token CSRF é obrigatório e o passive scan o valida.
+90027	IGNORE	Cookie assinado do Flask gera falso positivo de slack; não contém dados sensíveis em claro.
+2	IGNORE	O endereço privado pertence ao runner efêmero e não revela topologia de produção.

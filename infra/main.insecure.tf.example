@@ -1,0 +1,69 @@
+# ATENÇÃO: este arquivo documenta o estado INSEGURO antes da correção. NÃO aplicar.
+# A extensão .example impede que `terraform validate` carregue esta evidência.
+#
+# Este arquivo existe exclusivamente como referência do "antes" para fins didáticos.
+# Ele ilustra as más práticas corrigidas em main.tf:
+#   - bucket S3 público (acl = "public-read")
+#   - security group aberto para a internet (0.0.0.0/0)
+#   - ausência de criptografia em repouso
+#   - ausência de versionamento
+#   - ausência de logging de acesso
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = "us-east-1" # região hardcoded — má prática
+}
+
+# INSEGURO: bucket público — qualquer pessoa na internet pode ler os logs
+resource "aws_s3_bucket" "logs_insecure" {
+  bucket = "taskflow-logs-producao" # nome fixo — provoca conflito ao recriar
+
+  # INSEGURO: ACL pública expõe todos os objetos
+  # tflint-ignore: aws_s3_bucket_acl_attribute_deprecated
+  acl = "public-read"
+
+  # Sem force_destroy definido (padrão false, mas sem intenção explícita)
+  # Sem tags de rastreabilidade
+}
+
+# INSEGURO: sem bloqueio de acesso público — permite sobrescrever a ACL pública
+# (recurso aws_s3_bucket_public_access_block ausente)
+
+# INSEGURO: sem criptografia em repouso
+# (recurso aws_s3_bucket_server_side_encryption_configuration ausente)
+
+# INSEGURO: sem versionamento — objetos sobrescritos são irrecuperáveis
+# (recurso aws_s3_bucket_versioning ausente)
+
+# INSEGURO: sem logging de acesso ao próprio bucket
+# (recurso aws_s3_bucket_logging ausente)
+
+# INSEGURO: security group aberto para o mundo em todas as portas
+resource "aws_security_group" "taskflow_insecure" {
+  name        = "taskflow-sg-insecure"
+  description = "SG inseguro — aberto para o mundo"
+
+  # INSEGURO: qualquer IP pode acessar qualquer porta
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # INSEGURO: egress irrestrito — permite exfiltração de dados para qualquer destino
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}

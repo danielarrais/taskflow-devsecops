@@ -1,0 +1,79 @@
+name: IaC Scan
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Sem filtro paths: como este workflow é required check, ele deve produzir um
+# resultado em todo PR, inclusive quando a mudança não toca em IaC.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHECKOV_VERSION: 3.2.495
+  TERRAFORM_VERSION: 1.11.4
+
+jobs:
+  checkov:
+    name: IaC - Checkov
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Instalar Checkov em versão fixa
+        run: python -m pip install "checkov==$CHECKOV_VERSION"
+
+      - name: Checkov no Terraform
+        run: checkov --directory infra --framework terraform --compact
+
+  terraform-validate:
+    name: IaC - Terraform validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Preparar Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Inicializar sem backend
+        working-directory: infra
+        run: terraform init -backend=false
+
+      - name: Validar configuração
+        working-directory: infra
+        run: terraform validate
+
+  trivy-config:
+    name: IaC - Trivy config
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Trivy config como gate HIGH e CRITICAL
+        uses: ./.github/actions/trivy-scan
+        with:
+          scan-type: config
+          scan-ref: .
+          scanners: misconfig
+          severity: HIGH,CRITICAL

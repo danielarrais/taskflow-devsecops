@@ -1,0 +1,106 @@
+name: Observability Smoke
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Observability - logs seguros no Loki
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Gerar segredos efêmeros da stack
+        run: |
+          umask 077
+          {
+            echo "TASKFLOW_SECRET_KEY=$(openssl rand -hex 32)"
+            echo "TASKFLOW_ADMIN_PASSWORD=$(openssl rand -hex 24)"
+            echo "TASKFLOW_ALUNO_PASSWORD=$(openssl rand -hex 24)"
+            echo "GF_SECURITY_ADMIN_PASSWORD=$(openssl rand -hex 24)"
+          } > .env
+
+      - name: Validar o Compose
+        run: docker compose config --quiet
+
+      - name: Subir TaskFlow, Loki, Promtail e Grafana
+        run: docker compose up --detach --build --wait --wait-timeout 120
+
+      - name: Gerar eventos de falha de login
+        run: |
+          curl --fail --silent --show-error --cookie-jar /tmp/taskflow-cookies \
+            http://127.0.0.1:5000/login > /tmp/login.html
+          csrf_token="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' /tmp/login.html)"
+          test -n "$csrf_token"
+          for attempt in $(seq 1 12); do
+            curl --fail --silent --show-error \
+              --cookie /tmp/taskflow-cookies \
+              --data-urlencode "username=admin" \
+              --data-urlencode "password=senha-incorreta-$attempt" \
+              --data-urlencode "csrf_token=$csrf_token" \
+              http://127.0.0.1:5000/login >/dev/null
+          done
+
+      - name: Confirmar evento login_failed no Loki
+        run: |
+          for attempt in $(seq 1 30); do
+            docker compose exec -T grafana curl --fail --silent --get \
+              --data-urlencode 'query={job="taskflow"} | json | event="login_failed"' \
+              http://loki:3100/loki/api/v1/query_range > loki-login-failed.json
+            event_count="$(python - <<'PY'
+          import json
+
+          with open("loki-login-failed.json") as evidence:
+              result = json.load(evidence)["data"]["result"]
+          print(sum(len(stream["values"]) for stream in result))
+          PY
+          )"
+            if [ "$event_count" -ge 12 ]; then
+              echo "$event_count eventos seguros encontrados no Loki na tentativa $attempt."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Evento login_failed não apareceu no Loki."
+          exit 1
+
+      - name: Verificar higiene dos logs
+        run: |
+          docker compose logs --no-color > observability-smoke.log
+          if grep -Eiq 'senha-incorreta|"password"|authorization|session=' observability-smoke.log; then
+            echo "Dado sensível encontrado nos logs."
+            exit 1
+          fi
+
+      - name: Publicar evidências do smoke
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: observability-smoke
+          path: |
+            observability-smoke.log
+            loki-login-failed.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Diagnóstico e encerramento
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs --no-color --tail=100
+          docker compose down --volumes

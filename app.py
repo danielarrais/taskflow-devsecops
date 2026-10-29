@@ -4,10 +4,12 @@ esteira do grupo. As vulnerabilidades da linha de base e como cada uma foi
 tratada estao documentadas no README.
 """
 
+import hmac
 import os
+import secrets
 import sqlite3
 
-from flask import Flask, g, redirect, render_template, request, session, url_for
+from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 SEED_USERS = (
@@ -29,6 +31,24 @@ def require_env(name):
 app = Flask(__name__)
 app.config["SECRET_KEY"] = require_env("TASKFLOW_SECRET_KEY")
 app.config["DATABASE"] = os.environ.get("TASKFLOW_DATABASE", "taskflow.db")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("TASKFLOW_COOKIE_SECURE", "0") == "1"
+
+
+def csrf_token():
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_urlsafe(32)
+    return session["csrf_token"]
+
+
+def validate_csrf():
+    submitted = request.form.get("csrf_token", "")
+    if not hmac.compare_digest(submitted, session.get("csrf_token", "")):
+        abort(400)
+
+
+app.jinja_env.globals["csrf_token"] = csrf_token
 
 
 def get_db():
@@ -85,10 +105,35 @@ def index():
     return redirect(url_for("tasks"))
 
 
+@app.route("/healthz")
+def healthz():
+    return {"status": "ok"}
+
+
+@app.after_request
+def security_headers(response):
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; script-src 'self'; style-src 'self'; "
+        "img-src 'self'; font-src 'self'; connect-src 'self'; frame-src 'none'; "
+        "frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'; "
+        "manifest-src 'self'; media-src 'self'; worker-src 'self'"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
+    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
     if request.method == "POST":
+        validate_csrf()
         username = request.form["username"]
         password = request.form["password"]
 
@@ -136,6 +181,7 @@ def new_task():
         return redirect(url_for("login"))
 
     if request.method == "POST":
+        validate_csrf()
         title = request.form["title"]
         description = request.form["description"]
         db = get_db()
