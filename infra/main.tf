@@ -139,7 +139,7 @@ resource "aws_security_group" "taskflow" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = [var.allowed_ip_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
 }
