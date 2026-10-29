@@ -4,7 +4,7 @@
 # FALHA 1 (tag latest sem fixar): imagem base minima Chainguard/Wolfi, fixada
 # por digest imutavel. O runtime nao tem shell nem gerenciador de pacotes.
 # O estagio de build usa a variante -dev (com pip), que nao vai para a imagem final.
-FROM cgr.dev/chainguard/python:latest-dev@sha256:01280a9ffd0c9c427d3127540203af6707ebf35cdb0481182aef303c03db239c AS build
+FROM cgr.dev/chainguard/python:latest-dev@sha256:b12d43491dc1e7716c76a2eeba0b821ccf368ebecf55944cc64df34eeba4db48 AS build
 
 WORKDIR /app
 # O venv da aplicacao e criado sem pip: o pip do estagio de build instala os
@@ -18,7 +18,7 @@ COPY requirements.txt .
 RUN pip --python /app/venv/bin/python install --no-cache-dir --require-hashes -r requirements.txt \
     && mkdir -p /app/data /app/logs
 
-FROM cgr.dev/chainguard/python:latest@sha256:0f47468835f6c443553040eebccc20b0762d9608251be085786007e2e93b2285 AS runtime
+FROM cgr.dev/chainguard/python:latest@sha256:549f3ba5e588ebab80dcf5a5a3536aa7f4b5c384bc6955c0347d372414197386 AS runtime
 
 WORKDIR /app
 ENV PATH="/app/venv/bin:$PATH" \
