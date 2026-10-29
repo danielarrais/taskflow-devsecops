@@ -1,0 +1,144 @@
+name: DAST
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_IMAGE: taskflow-dast:${{ github.sha }}
+  APP_TARGET: http://127.0.0.1:5000
+  ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:stable@sha256:030d3df57735dacbb83464854758e674dd9ad01d79d12a129a8e58b1fd384238
+
+jobs:
+  zap-baseline:
+    name: DAST - ZAP Baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build da imagem corrigida
+        run: docker build --pull --file Dockerfile.dast --tag "$APP_IMAGE" .
+
+      - name: Subir a TaskFlow no runner
+        run: |
+          admin_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$admin_password"
+          printf '%s' "$admin_password" > "$RUNNER_TEMP/dast-admin-password"
+          docker run --detach --name taskflow-dast \
+            --publish 127.0.0.1:5000:5000 \
+            --read-only --cap-drop=ALL --security-opt=no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,uid=65532,gid=65532,mode=0700,size=16m \
+            --tmpfs /app/data:rw,noexec,nosuid,uid=65532,gid=65532,mode=0700,size=16m \
+            --env TASKFLOW_SECRET_KEY="$(openssl rand -hex 32)" \
+            --env TASKFLOW_ADMIN_PASSWORD="$admin_password" \
+            --env TASKFLOW_ALUNO_PASSWORD="$(openssl rand -hex 24)" \
+            "$APP_IMAGE"
+
+      - name: Espera ativa pelo healthcheck
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "$APP_TARGET/healthz" >/dev/null; then
+              echo "Aplicação pronta na tentativa $attempt."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs taskflow-dast
+          exit 1
+
+      - name: Criar fixture XSS autenticada
+        run: |
+          mkdir -p "$RUNNER_TEMP/zap"
+          cp .zap/rules.tsv "$RUNNER_TEMP/zap/rules.tsv"
+          chmod 777 "$RUNNER_TEMP/zap"
+
+          curl --fail --silent --cookie-jar "$RUNNER_TEMP/cookies" \
+            "$APP_TARGET/login" > "$RUNNER_TEMP/login.html"
+          csrf_token="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' "$RUNNER_TEMP/login.html")"
+          test -n "$csrf_token"
+          curl --fail --silent --cookie "$RUNNER_TEMP/cookies" --cookie-jar "$RUNNER_TEMP/cookies" \
+            --data-urlencode "username=admin" \
+            --data-urlencode "password=$(cat "$RUNNER_TEMP/dast-admin-password")" \
+            --data-urlencode "csrf_token=$csrf_token" \
+            "$APP_TARGET/login" >/dev/null
+
+          curl --fail --silent --cookie "$RUNNER_TEMP/cookies" --cookie-jar "$RUNNER_TEMP/cookies" \
+            "$APP_TARGET/tasks/new" > "$RUNNER_TEMP/new-task.html"
+          csrf_token="$(sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' "$RUNNER_TEMP/new-task.html")"
+          test -n "$csrf_token"
+          curl --fail --silent --cookie "$RUNNER_TEMP/cookies" --cookie-jar "$RUNNER_TEMP/cookies" \
+            --data-urlencode "title=fixture-dast" \
+            --data-urlencode "description=<img src=x onerror=alert(1)>" \
+            --data-urlencode "csrf_token=$csrf_token" \
+            "$APP_TARGET/tasks/new" >/dev/null
+
+          session_cookie="$(awk '$6 == "session" {print $7}' "$RUNNER_TEMP/cookies")"
+          test -n "$session_cookie"
+          printf '%s' "$session_cookie" > "$RUNNER_TEMP/zap/session-cookie"
+
+      - name: Executar ZAP Baseline
+        run: |
+          set +e
+          docker run --rm --network host \
+            --volume "$RUNNER_TEMP/zap:/zap/wrk:rw" \
+            "$ZAP_IMAGE" zap-baseline.py \
+            -t "$APP_TARGET" \
+            -c /zap/wrk/rules.tsv \
+            -r zap-report.html \
+            -J zap-report.json \
+            -w zap-report.md
+          echo "$?" > "$RUNNER_TEMP/zap/exit-code"
+
+      - name: Executar active scan autenticado para XSS
+        run: |
+          session_cookie="$(cat "$RUNNER_TEMP/zap/session-cookie")"
+          set +e
+          docker run --rm --network host \
+            --volume "$RUNNER_TEMP/zap:/zap/wrk:rw" \
+            "$ZAP_IMAGE" zap-full-scan.py \
+            -t "$APP_TARGET/tasks" \
+            -m 1 -T 5 \
+            -c /zap/wrk/rules.tsv \
+            -r zap-active-report.html \
+            -J zap-active-report.json \
+            -w zap-active-report.md \
+            -z "-config replacer.full_list(0).description=taskflow-auth -config replacer.full_list(0).enabled=true -config replacer.full_list(0).matchtype=REQ_HEADER -config replacer.full_list(0).matchstr=Cookie -config replacer.full_list(0).replacement=session=$session_cookie"
+          echo "$?" > "$RUNNER_TEMP/zap/active-exit-code"
+
+      - name: Publicar relatórios ZAP
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zap-reports
+          path: |
+            ${{ runner.temp }}/zap/zap-report.*
+            ${{ runner.temp }}/zap/zap-active-report.*
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Aplicar gate do ZAP
+        run: |
+          exit_code="$(cat "$RUNNER_TEMP/zap/exit-code")"
+          active_exit_code="$(cat "$RUNNER_TEMP/zap/active-exit-code")"
+          if [ "$exit_code" -ne 0 ] || [ "$active_exit_code" -ne 0 ]; then
+            echo "ZAP reprovou: baseline=$exit_code, active=$active_exit_code."
+            exit 1
+          fi
+
+      - name: Logs da aplicação
+        if: always()
+        run: docker logs taskflow-dast || true

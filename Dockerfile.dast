@@ -1,0 +1,28 @@
+# Imagem dedicada ao DAST: usa a aplicação corrigida do Módulo 4.
+FROM cgr.dev/chainguard/python:latest-dev@sha256:630df1be3733f7b38d1b535872904248adfe23fbea4befcb08da47cb7436ddb2 AS build
+
+WORKDIR /app
+RUN python -m venv --without-pip /app/venv
+COPY requirements.txt .
+RUN pip --python /app/venv/bin/python install --no-cache-dir --require-hashes -r requirements.txt \
+    && mkdir -p /app/data
+
+FROM cgr.dev/chainguard/python:latest@sha256:8c6e0d0a587455e8a8d145e20234d5ef5a531a1c052a7b9d76b155ccc7fcded2
+
+WORKDIR /app
+ENV PATH="/app/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TASKFLOW_DATABASE=/app/data/taskflow.db \
+    FLASK_DEBUG=0
+
+COPY --from=build /app/venv /app/venv
+COPY --from=build --chown=65532:65532 /app/data /app/data
+COPY --chown=65532:65532 app_fixed_dast.py ./app.py
+COPY --chown=65532:65532 gunicorn.conf.py ./
+COPY --chown=65532:65532 templates ./templates
+
+USER 65532:65532
+EXPOSE 5000
+ENTRYPOINT ["python", "-m", "gunicorn"]
+CMD ["--config", "gunicorn.conf.py", "app:app"]

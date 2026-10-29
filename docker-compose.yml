@@ -1,0 +1,113 @@
+# Stack segura da Atividade 2: aplicação + observabilidade.
+# O SQLite fica em volume interno e não expõe porta ao host.
+services:
+  taskflow:
+    build: .
+    image: taskflow:local
+    read_only: true
+    user: "65532:65532"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 100
+    mem_limit: 256m
+    cpus: 0.50
+    command: ["--config", "gunicorn.instrumented.conf.py", "app_instrumented:app"]
+    ports:
+      - "127.0.0.1:5000:5000"
+    networks: [frontend, backend]
+    environment:
+      TASKFLOW_SECRET_KEY: "${TASKFLOW_SECRET_KEY:?defina no arquivo .env}"
+      TASKFLOW_ADMIN_PASSWORD: "${TASKFLOW_ADMIN_PASSWORD:?defina no arquivo .env}"
+      TASKFLOW_ALUNO_PASSWORD: "${TASKFLOW_ALUNO_PASSWORD:?defina no arquivo .env}"
+      TASKFLOW_DATABASE: /app/data/taskflow.db
+      TASKFLOW_LOG_FILE: /app/logs/taskflow.json.log
+      FLASK_DEBUG: "0"
+    volumes:
+      - taskflow-data:/app/data
+      - taskflow-logs:/app/logs
+      - ./app_instrumented.py:/app/app_instrumented.py:ro
+      - ./gunicorn.instrumented.conf.py:/app/gunicorn.instrumented.conf.py:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  loki:
+    image: grafana/loki:3.5.0
+    command: ["-config.file=/etc/loki/config.yml"]
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.50
+    networks: [backend]
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.5.0
+    command: ["-config.file=/etc/promtail/config.yml"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    cpus: 0.25
+    networks: [backend]
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/config.yml:ro
+      - taskflow-logs:/var/log/taskflow:ro
+      - promtail-data:/var/lib/promtail
+    depends_on: [loki]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.50
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [frontend, backend]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: "${GF_SECURITY_ADMIN_PASSWORD:?defina no arquivo .env}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/loki.yml:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    depends_on: [loki]
+    restart: unless-stopped
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+
+volumes:
+  taskflow-data:
+  taskflow-logs:
+  loki-data:
+  promtail-data:
+  grafana-data:

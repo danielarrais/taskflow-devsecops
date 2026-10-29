@@ -1,0 +1,18 @@
+
+Report Summary
+
+┌─────────────────┬────────────┬───────────────────┐
+│     Target      │    Type    │ Misconfigurations │
+├─────────────────┼────────────┼───────────────────┤
+│ Dockerfile      │ dockerfile │         0         │
+├─────────────────┼────────────┼───────────────────┤
+│ Dockerfile.dast │ dockerfile │         0         │
+├─────────────────┼────────────┼───────────────────┤
+│ infra           │ terraform  │         0         │
+├─────────────────┼────────────┼───────────────────┤
+│ infra/main.tf   │ terraform  │         0         │
+└─────────────────┴────────────┴───────────────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+

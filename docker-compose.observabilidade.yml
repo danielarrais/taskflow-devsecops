@@ -1,0 +1,4 @@
+# Atalho explícito para a demo de observabilidade.
+# Requer Docker Compose 2.20+ e reutiliza a stack segura sem duplicar serviços.
+include:
+  - path: docker-compose.yml

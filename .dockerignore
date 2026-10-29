@@ -2,6 +2,9 @@
 # historico do Git, ambientes locais e artefatos de teste ficam de fora.
 *
 !app.py
+!app_fixed_dast.py
+!app_instrumented.py
 !gunicorn.conf.py
+!gunicorn.instrumented.conf.py
 !requirements.txt
 !templates/

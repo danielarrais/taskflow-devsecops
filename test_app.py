@@ -24,11 +24,22 @@ def client(tmp_path):
 
 
 def login(client, username, password):
-    return client.post("/login", data={"username": username, "password": password})
+    client.get("/login")
+    with client.session_transaction() as session:
+        token = session["csrf_token"]
+    return client.post(
+        "/login", data={"username": username, "password": password, "csrf_token": token}
+    )
 
 
 def create_task(client, title, description=""):
-    return client.post("/tasks/new", data={"title": title, "description": description})
+    client.get("/tasks/new")
+    with client.session_transaction() as session:
+        token = session["csrf_token"]
+    return client.post(
+        "/tasks/new",
+        data={"title": title, "description": description, "csrf_token": token},
+    )
 
 
 def test_login_com_credenciais_validas_redireciona_para_tarefas(client):

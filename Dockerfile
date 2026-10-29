@@ -16,7 +16,7 @@ COPY requirements.txt .
 # FALHA 3 (sem verificacao de integridade): cada pacote e conferido contra o
 # hash registrado no requirements.txt; um pacote adulterado aborta o build.
 RUN pip --python /app/venv/bin/python install --no-cache-dir --require-hashes -r requirements.txt \
-    && mkdir -p /app/data
+    && mkdir -p /app/data /app/logs
 
 FROM cgr.dev/chainguard/python:latest@sha256:38ba1cbf71702bacc5f5be22ea41e3d4ad1bfb2565413b0caf4bafde38e831f2 AS runtime
 
@@ -28,6 +28,7 @@ ENV PATH="/app/venv/bin:$PATH" \
 
 COPY --from=build /app/venv /app/venv
 COPY --from=build --chown=65532:65532 /app/data /app/data
+COPY --from=build --chown=65532:65532 /app/logs /app/logs
 COPY app.py gunicorn.conf.py ./
 COPY templates ./templates
 
